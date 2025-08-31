@@ -4,8 +4,11 @@ import logging
 from os import makedirs
 from os.path import exists
 import sys
-from financial_report_service import batchInsert
-from financial_report import FinancialReport
+
+sys.path.append('/Users/cheng/Desktop/code/financial_report')
+
+from dao.service.financial_report_service import batchInsert
+from dao.domain.financial_report import FinancialReport
 from tenacity import retry, stop_after_attempt, wait_fixed
 from datetime import datetime
 
@@ -52,7 +55,7 @@ def get_orgid(stock_code):
 
 
 # 根据页码和orgid获取PDF链接
-def get_pdf_url(page, data):
+def get_pdf_url(page, data,begin_date,end_date):
     """获得公告的pdf下载信息"""
     code = data.get("code")
     orgid = data.get("orgid")
@@ -64,7 +67,7 @@ def get_pdf_url(page, data):
         "column": "szse",
         "category": "",
         "plate": "sz",
-        "seDate": "",
+        "seDate": "{}+~+{}".format(begin_date,end_date),
         "searchkey": "",
         "secid": "",
         "sortName": "",
@@ -83,6 +86,9 @@ def get_pdf_url(page, data):
         # 解析返回的JSON数据，获取文档名称以及下载链接
         an = res.json()
         dats = an.get("announcements")
+        if dats is None:
+            return []
+        
         stock_list = []
         for dat in dats:
             if re.search(ban, dat["announcementTitle"]):
@@ -126,7 +132,7 @@ def contains_any_pattern(string, patterns):
 
 
 # 获取总页数
-def get_totalpages(data):
+def get_totalpages(data,begin_date,end_date):
     """获得公告的总页数"""
     code = data.get("code")
     orgid = data.get("orgid")
@@ -138,7 +144,7 @@ def get_totalpages(data):
         "column": "szse",
         "category": "",
         "plate": "sz",
-        "seDate": "",
+        "seDate": "{}+~+{}".format(begin_date,end_date),
         "searchkey": "",
         "secid": "",
         "sortName": "",
@@ -162,12 +168,16 @@ def extract_date_from_url(url):
 if __name__ == "__main__":
 
     origin_id = get_orgid("000155")
-    pages = get_totalpages(origin_id)
+    
+    begin_date='2023-01-01'
+    end_date=datetime.now().strftime('%Y-%m-%d')
+    
+    pages = get_totalpages(origin_id,begin_date,end_date)
     logging.info(f"一共{pages}页公告信息...")
 
     reports = []
     for page in range(1, pages + 1):
-        pdfdata = get_pdf_url(page, origin_id)
+        pdfdata = get_pdf_url(page, origin_id,begin_date,end_date)
 
         for data in pdfdata:
             part_url = data.get("adjunctUrl")
