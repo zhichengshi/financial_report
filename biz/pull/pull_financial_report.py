@@ -6,6 +6,9 @@ from os.path import exists
 import sys
 from financial_report_service import batchInsert
 from financial_report import FinancialReport
+from tenacity import retry, stop_after_attempt, wait_fixed
+from datetime import datetime
+
 
 
 announcement_list = [
@@ -27,6 +30,9 @@ DETAIL_URL = "http://static.cninfo.com.cn/"
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s: %(message)s"
 )
+
+# 提取日期信息
+pattern = r'/(\d{4}-\d{2}-\d{2})/'
 
 
 # 根据股票编码获取orgid
@@ -67,9 +73,14 @@ def get_pdf_url(page, data):
     }
 
     with httpx.Client(headers=headers) as client:
-        res = client.post(url, data=post_data)
-        if res.status_code != 200:
+        # 重试获取数据
+        try:
+            res = post_with_retry(client, url, data=post_data)
+        except Exception as e:
+            logging.error(f"请求失败: {e}")
             return []
+        
+        # 解析返回的JSON数据，获取文档名称以及下载链接
         an = res.json()
         dats = an.get("announcements")
         stock_list = []
@@ -77,13 +88,31 @@ def get_pdf_url(page, data):
             if re.search(ban, dat["announcementTitle"]):
                 continue
             elif contains_any_pattern(dat["announcementTitle"], announcement_list):
+                
+                part_url = dat["adjunctUrl"]
+                ## 如果链接不是以pdf结汇，则跳过
+                if not part_url.endswith(".PDF"):
+                    continue
+                
+                date_str=extract_date_from_url(part_url)
+                
                 stock_list.append(
                     {
                         "announcementTitle": dat["announcementTitle"],
                         "adjunctUrl": dat["adjunctUrl"],
+                        "date":datetime.strptime(date_str, '%Y-%m-%d'),
                     }
                 )
         return stock_list
+
+
+# 带重试的POST请求，每隔3秒重试一次，最多重试6次
+@retry(stop=stop_after_attempt(6), wait=wait_fixed(3))
+def post_with_retry(client: httpx.Client, url: str, **kwargs) -> httpx.Response:
+    response = client.post(url, **kwargs)
+    if response.status_code != 200:
+        raise ValueError(f"状态码非200: {response.status_code}")
+    return response
 
 
 # 判断字符串是否包含任意一个给定的模式
@@ -122,36 +151,43 @@ def get_totalpages(data):
         totalpages = an.get("totalpages")
         return totalpages
 
+# 提取链接日期信息
+def extract_date_from_url(url):
+    match = re.search(pattern, url)
+    if match:
+        return match.group(1)  # 返回匹配的日期字符串
+    return '1970-01-01'  # 如果没有匹配，返回一个默认值
+
 
 if __name__ == "__main__":
-    sys.path.append("/Users/cheng/Desktop/code/financial_report/biz")   
-    for  path in sys.path:
-        print(path)    
 
     origin_id = get_orgid("000155")
     pages = get_totalpages(origin_id)
     logging.info(f"一共{pages}页公告信息...")
 
-
-    reports=[]
+    reports = []
     for page in range(1, pages + 1):
         pdfdata = get_pdf_url(page, origin_id)
 
         for data in pdfdata:
             part_url = data.get("adjunctUrl")
             name = data.get("announcementTitle")
+            date_time= data.get("date")
             pdf_name = origin_id.get("name") + "：" + name
             pdf_url = DETAIL_URL + part_url
             logging.info(f"公告名称: {pdf_name}, 下载链接: {pdf_url}")
 
-            reports.append(FinancialReport(
-                stock_code=origin_id.get("code"),
-                company_name=origin_id.get("name"),
-                file_type_id=1,
-                file_type_name=announcement,
-                file_name=pdf_name,
-                file_download_url=pdf_url,
-                local_save_path="",
-            ))
+            reports.append(
+                FinancialReport(
+                    stock_code=origin_id.get("code"),
+                    company_name=origin_id.get("name"),
+                    file_type_id=1,
+                    file_type_name=announcement,
+                    file_name=pdf_name,
+                    file_download_url=pdf_url,
+                    local_save_path="",
+                    report_time=date_time
+                )
+            )
     batchInsert(reports)
     logging.info(f"公告信息入库完成, 共{len(reports)}条数据)")

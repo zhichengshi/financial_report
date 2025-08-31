@@ -64,8 +64,8 @@ def queryRows():
 
     return result
 
-def deleteAll(__stock_code):
-    """ 删除所有数据 """
+def delete_by_stock_code(__stock_code):
+    """ 删除指定股票代码的记录 """
     with getSession() as session:
         num_deleted = session.query(FinancialReport).filter(
             FinancialReport.stock_code == __stock_code
@@ -74,8 +74,6 @@ def deleteAll(__stock_code):
         print(f"Deleted {num_deleted} rows from financial_report_info table.")
 
 
-if __name__ == "__main__":
-    deleteAll('000155')
-
+delete_by_stock_code("000155")
 
 
