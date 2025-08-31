@@ -113,7 +113,7 @@ if __name__ == "__main__":
     email_sender = EmailSender(
         email_type='163',
         username='finacialreport@163.com',  
-        password='YEiHeCJDeQNckWFB'  # 授权码
+        password=''  # 授权码
     )
     
     # 发送带附件的邮件
