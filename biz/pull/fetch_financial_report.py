@@ -10,8 +10,6 @@ from dao.domain.financial_report import FinancialReport
 from tenacity import retry, stop_after_attempt, wait_fixed
 from datetime import datetime
 
-
-
 announcement_list = [
     "分红派息实施公告",
     "利润分配预案",
